@@ -5,6 +5,12 @@ from src.model.usuario import Usuario
 from src.model.database import Database
 from src.model.errores import CamposVaciosError, FechaInvalidaError, RangoFechasInvalidoError, UsuarioNoEncontradoError, ContrasenaIncorrectaError, CorreoYaRegistradoError, ReporteError
 
+from sqlalchemy.orm import sessionmaker
+from src.model.orm_model import Base, engine
+
+
+Session = sessionmaker(bind=engine)
+
 
 class TestRegistroActividad:
     def setup_method(self, method):
@@ -12,6 +18,9 @@ class TestRegistroActividad:
         self.db = Database()
         self.db.clear_tables()
         self.actividad = Actividad(self.db)
+        Base.metadata.drop_all(bind=engine)   # Limpia antes
+        Base.metadata.create_all(bind=engine) # Crea las tablas necesarias
+        self.session = Session()
     
     # ---- PRUEBAS NORMALES ----
     def test_registro_actividad_valida(self):
@@ -38,7 +47,7 @@ class TestRegistroActividad:
             "clima": "Nublado"
         })
         actividades = self.actividad.consultar_actividades("2025-03-06", "2025-03-06")
-        assert actividades[0][3] == "Limpieza del área"
+        assert actividades[0]["descripcion"] == "Limpieza del área"
     
     def test_registro_actividad_con_clima_variable(self):
         """Registrar una actividad con una condición climática cambiante"""
@@ -51,7 +60,8 @@ class TestRegistroActividad:
             "clima": "Lluvia intermitente"
         })
         actividades = self.actividad.consultar_actividades("2025-03-06", "2025-03-06")
-        assert actividades[0][6] == "Lluvia intermitente"
+        assert actividades[0]["clima"] == "Lluvia intermitente"
+
     
     # ---- PRUEBAS EXTREMAS ----
     def test_registro_actividad_fecha_lejana(self):
@@ -79,8 +89,8 @@ class TestRegistroActividad:
             "clima": "Nublado"
         })
         actividades = self.actividad.consultar_actividades("2025-03-06", "2025-03-06")
-        assert len(actividades[0][3]) == 1000
-    
+        assert len(actividades[0]["descripcion"]) == 1000
+
     def test_registro_actividad_clima_desconocido(self):
         """Registrar una actividad con un tipo de clima poco común"""
         self.actividad.registrar_actividad({
@@ -92,7 +102,7 @@ class TestRegistroActividad:
             "clima": "Huracán categoría 5"
         })
         actividades = self.actividad.consultar_actividades("2025-03-06", "2025-03-06")
-        assert actividades[0][6] == "Huracán categoría 5"
+        assert actividades[0]["clima"] == "Huracán categoría 5"
     
     # ---- PRUEBAS DE ERROR ----
     def test_registro_actividad_fecha_invalida(self):
@@ -332,8 +342,9 @@ class TestIniciarSesion:
         self.usuario.crear_cuenta("Juan", "juan@example.com", "password123")
         resultado = self.usuario.iniciar_sesion("juan@example.com", "password123")
         assert resultado is not None  # Devuelve tupla (id, nombre, correo, contrasena)
-        assert resultado[1] == "Juan"
-        assert resultado[2] == "juan@example.com"
+        assert resultado["nombre"] == "Juan"
+        assert resultado["correo"] == "juan@example.com"
+
 
     def test_iniciar_sesion_contrasena_incorrecta(self):
         """Intentar iniciar sesión con la contraseña incorrecta"""
@@ -352,14 +363,16 @@ class TestIniciarSesion:
         correo_largo = "a" * 250 + "@example.com"
         self.usuario.crear_cuenta("UsuarioLargo", correo_largo, "password123")
         resultado = self.usuario.iniciar_sesion(correo_largo, "password123")
-        assert resultado[2] == correo_largo
+        assert resultado["correo"] == correo_largo
 
     def test_iniciar_sesion_contrasena_larga(self):
         """Iniciar sesión con una contraseña muy larga"""
         password_largo = "a" * 100
         self.usuario.crear_cuenta("Usuario", "usuario@example.com", password_largo)
         resultado = self.usuario.iniciar_sesion("usuario@example.com", password_largo)
-        assert resultado[3] == password_largo
+        assert resultado["contrasena"] == password_largo
+
+
 
     def test_iniciar_sesion_contrasena_vacia(self):
         """Intentar iniciar sesión con la contraseña vacía"""

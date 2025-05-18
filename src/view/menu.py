@@ -21,10 +21,10 @@ from src.model.errores import *
 from src.model.sesion import guardar_sesion, obtener_sesion, cerrar_sesion
 
 # Inicialización de lógica
-db = Database()
+import src.model.database as db
 actividad_model = Actividad(db)
 bitacora_model = Bitacora(db)
-usuario_model = Usuario(db)
+usuario_model = Usuario(db)  # <- Aquí sin pasar db
 
 
 class MenuPrincipal(Screen):
@@ -138,17 +138,26 @@ class RegistroActividad(FormularioBase):
     campos = ["Fecha", "Supervisor", "Descripción", "Anexos", "Responsable", "Clima"]
     boton_texto = "Registrar"
 
-    def ejecutar_accion(self, instance):
+    def accion(self, fecha, supervisor, descripcion, anexos, responsable, clima):
         if not obtener_sesion():
-            self.resultado.text = "[color=ff0000]Debes iniciar sesión primero.[/color]"
-            return
+            raise CamposVaciosError("Debes iniciar sesión primero.")
 
-        try:
-            datos = {campo.lower(): self.inputs[campo].text for campo in self.campos}
-            actividad_model.registrar_actividad(datos)
-            self.resultado.text = "[color=00ff00]Actividad registrada exitosamente.[/color]"
-        except BaseError as e:
-            self.resultado.text = f"[color=ff0000]Error: {str(e)}[/color]"
+        datos = {
+            "fecha": fecha,
+            "supervisor": supervisor,
+            "descripcion": descripcion,
+            "anexos": anexos,
+            "responsable": responsable,
+            "clima": clima
+        }
+        actividad_model.registrar_actividad(datos)
+
+        # Limpia los campos después de registrar
+        for input_widget in self.inputs.values():
+            input_widget.text = ""
+
+        return "Actividad registrada exitosamente."
+
 
 
 class CrearCuenta(FormularioBase):
@@ -167,8 +176,8 @@ class IniciarSesion(FormularioBase):
 
     def accion(self, correo, contrasena):
         user = usuario_model.iniciar_sesion(correo, contrasena)
-        guardar_sesion({"correo": correo, "nombre": user[1]})
-        return f"Bienvenido {user[1]}"
+        guardar_sesion({"correo": correo, "nombre": user['nombre']})
+        return f"Bienvenido {user['nombre']}"
 
 
 class CambiarContrasena(FormularioBase):

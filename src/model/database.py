@@ -1,99 +1,137 @@
-import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
+from datetime import datetime
 
+# Configuración de conexión a PostgreSQL
+DB_HOST = "localhost"
+DB_PORT = "5432"
+DB_NAME = "bitacorina_db"
+DB_USER = "postgres"
+DB_PASSWORD = "maxelo31hd"
+
+def get_connection():
+    return psycopg2.connect(
+        host=DB_HOST,
+        port=DB_PORT,
+        dbname=DB_NAME,
+        user=DB_USER,
+        password=DB_PASSWORD
+    )
+
+# Clase para operaciones genéricas en base de datos
 class Database:
-    """
-    Clase para gestionar la conexión y consultas a la base de datos.
-    """
+    def execute_query(self, query, params=None):
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, params or ())
+                conn.commit()
 
-    def __init__(self, db_name="bitacora.db"):
-        """
-        Inicializa la conexión a la base de datos.
-
-        :param db_name: Nombre de la base de datos (por defecto 'bitacora.db').
-        """
-        self.db_name = db_name
-        self.connection = sqlite3.connect(self.db_name)
-        self.cursor = self.connection.cursor()
-        self.create_tables()
-
-    def create_tables(self):
-        """
-        Crea las tablas necesarias en la base de datos si no existen.
-        """
-        queries = [
-            """
-            CREATE TABLE IF NOT EXISTS bitacora (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                fecha TEXT,
-                supervisor TEXT,
-                descripcion TEXT,
-                anexos TEXT,
-                responsable TEXT,
-                clima TEXT
-            )
-            """,
-            """
-            CREATE TABLE IF NOT EXISTS actividades (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                fecha TEXT,
-                supervisor TEXT,
-                descripcion TEXT,
-                anexos TEXT,
-                responsable TEXT,
-                clima TEXT
-            )
-            """,
-            """
-            CREATE TABLE IF NOT EXISTS usuarios (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                nombre TEXT,
-                correo TEXT UNIQUE,
-                contrasena TEXT
-            )
-            """
-        ]
-        for query in queries:
-            self.execute_query(query)
-
-    def execute_query(self, query, params=()):
-        """
-        Ejecuta una consulta que modifica la base de datos (INSERT, UPDATE, DELETE).
-
-        :param query: Consulta SQL a ejecutar.
-        :param params: Parámetros para la consulta.
-        :return: El cursor de la consulta ejecutada.
-        """
-        self.cursor.execute(query, params)
-        self.connection.commit()
-        return self.cursor
-
-    def fetch_query(self, query, params=()):
-        """
-        Ejecuta una consulta SELECT que recupera datos de la base de datos.
-
-        :param query: Consulta SQL a ejecutar.
-        :param params: Parámetros para la consulta.
-        :return: Lista de resultados obtenidos.
-        """
-        self.cursor.execute(query, params)
-        results = self.cursor.fetchall()
-        return results if results else []
-
+    def fetch_query(self, query, params=None):
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(query, params or ())
+                return cur.fetchall()
+    
     def clear_tables(self):
-        """
-        Elimina todos los datos de las tablas sin eliminar la estructura de las mismas.
-        """
-        queries = [
-            "DELETE FROM bitacora",
-            "DELETE FROM actividades",
-            "DELETE FROM usuarios"
-        ]
-        for query in queries:
-            self.execute_query(query)
-        self.connection.commit()
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                TRUNCATE TABLE actividades, usuarios
+                RESTART IDENTITY CASCADE;
+            """)
+            conn.commit()
 
-    def close_connection(self):
-        """
-        Cierra la conexión con la base de datos.
-        """
-        self.connection.close()
+
+
+# Funciones específicas para gestión de usuarios
+def obtener_usuario_por_correo(correo):
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT * FROM usuarios WHERE correo = %s;
+            """, (correo,))
+            return cur.fetchone()
+
+def crear_usuario(nombre, correo, contrasena):
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO usuarios (nombre, correo, contrasena)
+                VALUES (%s, %s, %s)
+                RETURNING id;
+            """, (nombre, correo, contrasena))
+            return cur.fetchone()[0]
+
+def autenticar_usuario(correo, contrasena):
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT * FROM usuarios
+                WHERE correo = %s AND contrasena = %s;
+            """, (correo, contrasena))
+            return cur.fetchone()
+
+def actualizar_contrasena(correo, nueva_contrasena):
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE usuarios SET contrasena = %s WHERE correo = %s;
+            """, (nueva_contrasena, correo))
+
+# Funciones específicas para actividades
+def registrar_actividad(usuario_id, descripcion):
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO actividades (usuario_id, descripcion, fecha)
+                VALUES (%s, %s, %s);
+            """, (usuario_id, descripcion, datetime.now()))
+
+def obtener_actividades(usuario_id):
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT * FROM actividades
+                WHERE usuario_id = %s
+                ORDER BY fecha DESC;
+            """, (usuario_id,))
+            return cur.fetchall()
+
+# Funciones específicas para transacciones
+def registrar_transaccion(usuario_id, cantidad, categoria, tipo):
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO transacciones (usuario_id, cantidad, categoria, tipo, fecha)
+                VALUES (%s, %s, %s, %s, %s);
+            """, (usuario_id, cantidad, categoria, tipo, datetime.now()))
+
+def obtener_transacciones(usuario_id):
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT * FROM transacciones
+                WHERE usuario_id = %s
+                ORDER BY fecha DESC;
+            """, (usuario_id,))
+            return cur.fetchall()
+
+def insertar_actividad(fecha, supervisor, descripcion, anexos, responsable, clima):
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO actividades (fecha, supervisor, descripcion, anexos, responsable, clima)
+                VALUES (%s, %s, %s, %s, %s, %s);
+            """, (fecha, supervisor, descripcion, anexos, responsable, clima))
+            conn.commit()
+
+def obtener_actividades_por_rango(fecha_inicio, fecha_fin):
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT * FROM actividades
+                WHERE fecha BETWEEN %s AND %s
+                ORDER BY fecha;
+            """, (fecha_inicio, fecha_fin))
+            return cur.fetchall()
+        

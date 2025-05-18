@@ -81,7 +81,7 @@ class Bitacora:
         if inicio > fin:
             raise RangoFechasInvalidoError("La fecha de inicio no puede ser mayor que la fecha de fin.")
 
-        query = "SELECT * FROM bitacora WHERE fecha BETWEEN ? AND ?"
+        query = "SELECT * FROM actividades WHERE fecha BETWEEN %s AND %s"
         params = (fecha_inicio, fecha_fin)
         return self.db.fetch_query(query, params)
 
